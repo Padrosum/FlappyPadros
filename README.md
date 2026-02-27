@@ -44,7 +44,7 @@ Bilgisayarında **Python 3** kuruluysa hazırsın demektir! 🐍
     ```
 3.  Ve uçuşu başlat:
     ```bash
-    python flappy_padros.py
+    ./flappypadros
     ```
 
 > **⚠️ Windows Kullanıcıları İçin Not:** Windows'ta `curses` kütüphanesi standart olarak yüklü gelmez. Eğer hata alırsan şu komutla sorunu hemen çözebilirsin:
