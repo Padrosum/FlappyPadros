@@ -29,6 +29,9 @@ Oynaması çok kolay, ustalaşması... Neyse, sen dene ve gör! 😂
 
 ## 🚀 Kurulum ve Çalıştırma
 
+[Padros Packet Downloader ile indirebilirsiniz](https://github.com/Padrosum/ppd)
+
+
 Bilgisayarında **Python 3** kuruluysa hazırsın demektir! 🐍
 
 1.  Önce repoyu klonla:
