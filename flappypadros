@@ -1,0 +1,263 @@
+#!/usr/bin/env python
+"""
+FlappyPadros - Terminal Edition
+Kontroller: SPACE / ↑ = Zıpla  |  Q = Çıkış
+"""
+
+import curses
+import random
+import time
+
+# ── Sabitler ──────────────────────────────────────────────────────────────────
+GRAVITY       = 0.45
+JUMP_STRENGTH = -3.0
+PIPE_GAP      = 14        # üst-alt boru arası boşluk (satır)
+PIPE_WIDTH    = 5         # boru genişliği
+PIPE_SPEED    = 1         # kare başına hareket (karakter)
+PIPE_EVERY    = 35        # kaç karede bir yeni boru çıkar
+FRAME_TIME    = 0.05      # bir kare süresi (saniye) → 20 fps
+
+BIRD = [
+    ['(^v^)', r' \~~/ '],
+    ['(-o-)', r' /~~\ '],
+]
+
+# ── Yardımcılar ───────────────────────────────────────────────────────────────
+
+def sadd(stdscr, y, x, txt, attr=0):
+    """Güvenli addstr — sınır dışına çıkmaz."""
+    h, w = stdscr.getmaxyx()
+    if y < 0 or y >= h or x < 0 or x >= w:
+        return
+    txt = txt[:w - x]
+    if not txt:
+        return
+    try:
+        stdscr.addstr(y, x, txt, attr)
+    except curses.error:
+        pass
+
+def draw_bird(stdscr, iy, bird_x, frame, alive):
+    if alive:
+        top, bot = BIRD[frame % 2]
+        sadd(stdscr, iy,     bird_x, top, curses.color_pair(1) | curses.A_BOLD)
+        sadd(stdscr, iy + 1, bird_x, bot, curses.color_pair(1))
+    else:
+        sadd(stdscr, iy,     bird_x, '(x_x)', curses.color_pair(4) | curses.A_BOLD)
+        sadd(stdscr, iy + 1, bird_x, r' /~~\ ', curses.color_pair(4))
+
+def draw_pipe(stdscr, px, gap_top, gap_bottom, ground_y):
+    gb = curses.color_pair(2) | curses.A_BOLD  # gövde
+    gc = curses.color_pair(3) | curses.A_BOLD  # kapak
+    h, w = stdscr.getmaxyx()
+
+    for y in range(1, gap_top):
+        if y >= ground_y:
+            break
+        for dx in range(PIPE_WIDTH):
+            cx = px + dx
+            if 0 <= cx < w:
+                ch = '║' if dx in (0, PIPE_WIDTH - 1) else '▓'
+                sadd(stdscr, y, cx, ch, gb)
+
+    cap_x = max(0, px - 1)
+    sadd(stdscr, gap_top - 1, cap_x, '╔' + '═' * PIPE_WIDTH + '╗', gc)
+
+    sadd(stdscr, gap_bottom, cap_x, '╚' + '═' * PIPE_WIDTH + '╝', gc)
+    for y in range(gap_bottom + 1, ground_y):
+        for dx in range(PIPE_WIDTH):
+            cx = px + dx
+            if 0 <= cx < w:
+                ch = '║' if dx in (0, PIPE_WIDTH - 1) else '▓'
+                sadd(stdscr, y, cx, ch, gb)
+
+def show_box(stdscr, lines, color):
+    h, w  = stdscr.getmaxyx()
+    mlen  = max(len(l) for l in lines)
+    bw    = mlen + 6
+    bh    = len(lines) + 4
+    sy    = max(0, h // 2 - bh // 2)
+    sx    = max(0, w // 2 - bw // 2)
+    attr  = curses.color_pair(color) | curses.A_BOLD
+    sadd(stdscr, sy, sx, '╔' + '═' * (bw - 2) + '╗', attr)
+    for i in range(1, bh - 1):
+        sadd(stdscr, sy + i, sx, '║' + ' ' * (bw - 2) + '║', attr)
+    sadd(stdscr, sy + bh - 1, sx, '╚' + '═' * (bw - 2) + '╝', attr)
+    for i, line in enumerate(lines):
+        sadd(stdscr, sy + 2 + i, sx + 3, line.center(mlen), attr)
+
+# ── Ana fonksiyon ─────────────────────────────────────────────────────────────
+
+def main(stdscr):
+    curses.curs_set(0)
+    curses.start_color()
+    curses.use_default_colors()
+    curses.init_pair(1, curses.COLOR_YELLOW,  -1)
+    curses.init_pair(2, curses.COLOR_GREEN,   -1)
+    curses.init_pair(3, curses.COLOR_WHITE,   -1)
+    curses.init_pair(4, curses.COLOR_RED,     -1)
+    curses.init_pair(5, curses.COLOR_CYAN,    -1)
+    curses.init_pair(6, curses.COLOR_MAGENTA, -1)
+    curses.init_pair(7, curses.COLOR_BLUE,    -1)
+
+    high_score = 0
+
+    while True:
+        # ── Menü: BLOCKING mod ───────────────────────────────────────────────
+        stdscr.nodelay(False)
+        stdscr.clear()
+        h, w = stdscr.getmaxyx()
+        show_box(stdscr, [
+            "  ★  F L A P P Y P A D R O S  ★  ",
+            "",
+            "  (^v^)  <- bu sensin!",
+            "",
+            "  SPACE / yukari ok  ->  Zipla",
+            "         Q           ->  Cikis",
+            "",
+            "  Baslamak icin SPACE'e bas!",
+        ], color=6)
+        stdscr.refresh()
+
+        while True:
+            k = stdscr.getch()
+            if k in (ord('q'), ord('Q')):
+                return
+            if k in (ord(' '), curses.KEY_UP):
+                break
+
+        # ── Oyun: NON-BLOCKING mod ───────────────────────────────────────────
+        stdscr.nodelay(True)
+
+        h, w      = stdscr.getmaxyx()
+        ground_y  = h - 2
+        bird_x    = w // 5
+        bird_y    = float(h // 2)
+        bird_vel  = float(JUMP_STRENGTH)
+        pipes     = []
+        score     = 0
+        game_over = False
+        frame     = 0
+
+        while True:
+            t0 = time.monotonic()
+
+            # Giriş
+            key = stdscr.getch()
+            if key in (ord('q'), ord('Q')):
+                return
+            if key in (ord(' '), curses.KEY_UP) and not game_over:
+                bird_vel = float(JUMP_STRENGTH)
+
+            h, w     = stdscr.getmaxyx()
+            ground_y = h - 2
+
+            if not game_over:
+                # Fizik
+                bird_vel += GRAVITY
+                bird_y   += bird_vel
+
+                # Yeni boru her PIPE_EVERY karede bir
+                if frame % PIPE_EVERY == 0:
+                    half = PIPE_GAP // 2
+                    lo   = half + 3
+                    hi   = ground_y - half - 2
+                    if lo < hi:
+                        gc = random.randint(lo, hi)
+                        pipes.append({
+                            'x':          w - 1,
+                            'gap_top':    gc - half,
+                            'gap_bottom': gc + half,
+                            'scored':     False,
+                        })
+
+                # Borular sola hareket eder — her kare 1 karakter
+                for p in pipes:
+                    p['x'] -= PIPE_SPEED
+
+                # Skor güncelle
+                for p in pipes:
+                    if not p['scored'] and p['x'] + PIPE_WIDTH < bird_x:
+                        p['scored'] = True
+                        score      += 1
+                        high_score  = max(score, high_score)
+
+                # Ekran dışına çıkanları temizle
+                pipes = [p for p in pipes if p['x'] + PIPE_WIDTH > 0]
+
+                # Çarpışma: tavan/zemin
+                iy = int(bird_y)
+                if iy <= 0 or iy + 1 >= ground_y:
+                    game_over = True
+
+                # Çarpışma: borular
+                if not game_over:
+                    for p in pipes:
+                        px = p['x']
+                        if bird_x + 4 >= px and bird_x <= px + PIPE_WIDTH:
+                            if iy < p['gap_top'] or iy + 1 > p['gap_bottom']:
+                                game_over = True
+                                break
+
+            # ── Render ───────────────────────────────────────────────────────
+            stdscr.erase()
+
+            # Arka plan yıldızlar
+            for sx in range(2, w - 1, 11):
+                sy = (sx * 3 + frame // 20) % max(1, ground_y - 2) + 1
+                sadd(stdscr, sy, sx, '.', curses.color_pair(7))
+
+            # Borular
+            for p in pipes:
+                draw_pipe(stdscr, p['x'], p['gap_top'], p['gap_bottom'], ground_y)
+
+            # Zemin
+            sadd(stdscr, ground_y,     0, '~' * (w - 1), curses.color_pair(2) | curses.A_BOLD)
+            sadd(stdscr, ground_y + 1, 0, '#' * (w - 1), curses.color_pair(2) | curses.A_BOLD)
+
+            # Kuş
+            draw_bird(stdscr, int(bird_y), bird_x, frame // 6, alive=not game_over)
+
+            # HUD
+            hud = f"  FlappyPadros  |  Skor: {score}   Rekor: {high_score}  "
+            sadd(stdscr, 0, max(0, w // 2 - len(hud) // 2), hud,
+                 curses.color_pair(5) | curses.A_BOLD)
+
+            # Game Over
+            if game_over:
+                show_box(stdscr, [
+                    "  X  OYUN BITTI  X  ",
+                    "",
+                    f"   Skor  :  {score}",
+                    f"   Rekor :  {high_score}",
+                    "",
+                    "  SPACE  ->  Tekrar Oyna  ",
+                    "    Q    ->  Cikis        ",
+                ], color=4)
+                stdscr.refresh()
+                stdscr.nodelay(False)
+                while True:
+                    k = stdscr.getch()
+                    if k in (ord('q'), ord('Q')):
+                        return
+                    if k in (ord(' '), curses.KEY_UP):
+                        break
+                break  # dış döngüye → yeniden başlat
+
+            stdscr.refresh()
+            frame += 1
+
+            # Kare hızını sabitle
+            elapsed = time.monotonic() - t0
+            wait    = FRAME_TIME - elapsed
+            if wait > 0:
+                time.sleep(wait)
+
+# ── Giriş noktası ─────────────────────────────────────────────────────────────
+
+if __name__ == '__main__':
+    try:
+        curses.wrapper(main)
+    except KeyboardInterrupt:
+        pass
+    print("\n  FlappyPadros'tan cikis yapildi. Gorusuruz!\n")
