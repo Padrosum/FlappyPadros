@@ -61,5 +61,5 @@ Eğer "Ben bu kuşu daha hızlı uçururum!" diyorsan, kodun başındaki sabitle
 
 ## 📸 Ekran Görüntüsü
 
-![R1](r1)
-![R2](r2)
+![R1](r1.png)
+![R2](r2.png)
