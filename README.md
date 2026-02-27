@@ -36,7 +36,7 @@ Bilgisayarında **Python 3** kuruluysa hazırsın demektir! 🐍
 
 1.  Önce repoyu klonla:
     ```bash
-    git clone [https://github.com/kullaniciadi/FlappyPadros.git](https://github.com/kullaniciadi/FlappyPadros.git)
+    git clone https://github.com/Padrosum/FlappyPadros
     ```
 2.  Klasöre gir:
     ```bash
